@@ -1,0 +1,6 @@
+prometheus:
+  prometheusSpec:
+    remoteWrite:
+    - url: "http://172.20.0.1:9090/api/v1/write"
+    externalLabels:
+      cluster: "argowf2:9080" 

@@ -4,7 +4,7 @@
 при получении запроса микросервис определяет требуемое количество cpu по формуле executors_num*cpu и ram по формуле executors_num*ram,
 получает в prometheus значения свободных ресурсов в кластерах, сравнивает полученные результаты с требуемыми ресурсами и возвращает в ответ случайный кластер
 из подходящих.
-микросервис должен быть написан минималистично и просто для понимания и чтения.
+микросервис должен быть написан минималистично и просто для понимания и чтения. сборка должна быть осуществлена в один файл без зависимостей.
 
 пример curl запроса к микросервису: 
 curl -X POST http://localhost:8080/api/request \
@@ -18,11 +18,11 @@ curl -X POST http://localhost:8080/api/request \
 * golang - язык, на котором должен быть написан микросервис.
 * prometheus - система мониторинга, к которому должен обращаться микросервис для получения списка кластеров и выбора оптимального.
 
-адрес prometheus микросервис берет из env переменной PROMETHEUS_URL. например, PROMETHEUS_URL="http://172.20.0.1:9090"
+адрес prometheus микросервис берет из env переменной PROMETHEUS_URL. например, PROMETHEUS_URL="http://172.20.0.1:9090".
+порт микросервиса задается через env переменную MEDEA_SCOUT_PORT. например, MEDEA_SCOUT_PORT=8080.
 
 пример promql для получения списка кластеров с доступным cpu:
-curl -G \
-  --data-urlencode 'query=kube_resourcequota{namespace="argo-workflows",resource="limits.cpu",type="hard"} - on(cluster) kube_resourcequota{namespace="argo-workflows",resource="limits.cpu",type="used"}' http://localhost:9090/api/v1/query
+curl -G --data-urlencode 'query=kube_resourcequota{namespace="argo-workflows",resource="limits.cpu",type="hard"} - on(cluster) kube_resourcequota{namespace="argo-workflows",resource="limits.cpu",type="used"}' http://localhost:9090/api/v1/query
 
 пример ответа (в данном случае свободных cpu 29):
 {
@@ -43,6 +43,7 @@ curl -G \
   }
 }
 
+значение namespace в примерах ниже берется из json запроса к микросервису.
 пример promql для получения списка кластеров с доступным ram:
 curl -G \
   --data-urlencode 'query=(kube_resourcequota{namespace="argo-workflows",resource="limits.memory",type="hard"} - on(cluster) kube_resourcequota{namespace="argo-workflows",resource="limits.memory",type="used"})/1024^3' http://localhost:9090/api/v1/query

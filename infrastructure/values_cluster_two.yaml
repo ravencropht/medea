@@ -1,5 +1,12 @@
 server:
-  serviceType: NodePort
-  nodePort: 30002
+  serviceType: ClusterIP
   extraArgs: 
     - --auth-mode=server
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts:
+      - argowf2
+    paths:
+      - /
+    pathType: Prefix

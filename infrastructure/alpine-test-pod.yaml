@@ -9,9 +9,9 @@ spec:
     command: ["sh", "-c", "sleep 3600"]
     resources:
       requests:
-        cpu: "1"
-        memory: "256Mi"
+        cpu: "5"
+        memory: "5Gi"
       limits:
-        cpu: "1"
-        memory: "256Mi"
+        cpu: "5"
+        memory: "5Gi"
   restartPolicy: Never
