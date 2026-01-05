@@ -1,0 +1,12 @@
+server:
+  serviceType: ClusterIP
+  extraArgs: 
+    - --auth-mode=server
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts:
+      - argowf1
+    paths:
+      - /
+    pathType: Prefix

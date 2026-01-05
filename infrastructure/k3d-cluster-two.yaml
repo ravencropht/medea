@@ -1,0 +1,17 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: cluster-two
+servers: 1
+agents: 1
+image: rancher/k3s:v1.30.0-k3s1
+options:
+  k3d:
+    wait: true
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true
+ports:
+  - port: 9080:80
+    nodeFilters:
+      - loadbalancer

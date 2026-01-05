@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: compute-quota
+  namespace: argo-workflows
+spec:
+  hard:
+    requests.cpu: "30"
+    limits.cpu: "30"
+    requests.memory: 50Gi
+    limits.memory: 50Gi

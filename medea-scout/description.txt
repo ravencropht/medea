@@ -1,0 +1,68 @@
+ты senior golang разработчик.
+требуется создать микросервис medea-scout, к которому будут поступать запросы с названием namespace, количеством cpu, количеством ram и количеством executors. 
+в ответ микросервис должен возвращать в json имя кластера.
+при получении запроса микросервис определяет требуемое количество cpu по формуле executors_num*cpu и ram по формуле executors_num*ram,
+получает в prometheus значения свободных ресурсов в кластерах, сравнивает полученные результаты с требуемыми ресурсами и возвращает в ответ случайный кластер
+из подходящих.
+микросервис должен быть написан минималистично и просто для понимания и чтения.
+
+пример curl запроса к микросервису: 
+curl -X POST http://localhost:8080/api/request \
+  -H "Content-Type: application/json" \
+  -d '{"namespace": "1234567-dev-1234567", "cpu": 1, "ram": 1, executors_num: 2}'
+
+Пример json ответа:
+{argowf1}
+
+технический стэк проекта:
+* golang - язык, на котором должен быть написан микросервис.
+* prometheus - система мониторинга, к которому должен обращаться микросервис для получения списка кластеров и выбора оптимального.
+
+адрес prometheus микросервис берет из env переменной PROMETHEUS_URL. например, PROMETHEUS_URL="http://172.20.0.1:9090"
+
+пример promql для получения списка кластеров с доступным cpu:
+curl -G \
+  --data-urlencode 'query=kube_resourcequota{namespace="argo-workflows",resource="limits.cpu",type="hard"} - on(cluster) kube_resourcequota{namespace="argo-workflows",resource="limits.cpu",type="used"}' http://localhost:9090/api/v1/query
+
+пример ответа (в данном случае свободных cpu 29):
+{
+  "status": "success",
+  "data": {
+    "resultType": "vector",
+    "result": [
+      {
+        "metric": {
+          "cluster": "argowf1:8080"
+        },
+        "value": [
+          1767648979.764,
+          "29"
+        ]
+      }
+    ]
+  }
+}
+
+пример promql для получения списка кластеров с доступным ram:
+curl -G \
+  --data-urlencode 'query=(kube_resourcequota{namespace="argo-workflows",resource="limits.memory",type="hard"} - on(cluster) kube_resourcequota{namespace="argo-workflows",resource="limits.memory",type="used"})/1024^3' http://localhost:9090/api/v1/query
+
+
+пример ответа (в данном случае свободных mem 49.75 Gi):
+{
+  "status": "success",
+  "data": {
+    "resultType": "vector",
+    "result": [
+      {
+        "metric": {
+          "cluster": "argowf1:8080"
+        },
+        "value": [
+          1767649433.792,
+          "49.75"
+        ]
+      }
+    ]
+  }
+}
