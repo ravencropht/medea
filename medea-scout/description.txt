@@ -9,7 +9,7 @@
 пример curl запроса к микросервису: 
 curl -X POST http://localhost:8080/api/request \
   -H "Content-Type: application/json" \
-  -d '{"namespace": "1234567-dev-1234567", "cpu": 1, "ram": 1, executors_num: 2}'
+  -d '{"namespace": "1234567-dev-1234567", "cpu": 1, "ram": 1}'
 
 Пример json ответа:
 {argowf1}

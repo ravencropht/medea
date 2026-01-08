@@ -8,16 +8,18 @@ import (
 	"net/url"
 	"os"
 	"strconv"
-	"strings"
+	//"strings"
 	"time"
 )
 
 // RequestPayload описывает входящий JSON [cite: 4]
 type RequestPayload struct {
 	Namespace    string `json:"namespace"`
-	CPU          int    `json:"cpu"`
-	RAM          int    `json:"ram"`
-	ExecutorsNum int    `json:"executors_num"`
+	CPU          float64    `json:"cpu"`
+	RAM          float64    `json:"ram"`
+	//CPU          int    `json:"cpu"`
+	//RAM          int    `json:"ram"`
+	//ExecutorsNum int    `json:"executors_num"`
 }
 
 // ResponsePayload описывает исходящий JSON [cite: 2]
@@ -39,12 +41,12 @@ type PrometheusResponse struct {
 }
 
 // cleanClusterName убирает порт (например, :8080) из имени кластера [cite: 7]
-func cleanClusterName(name string) string {
-	if i := strings.Index(name, ":"); i != -1 {
-		return name[:i]
-	}
-	return name
-}
+//func cleanClusterName(name string) string {
+//	if i := strings.Index(name, ":"); i != -1 {
+//		return name[:i]
+//	}
+//	return name
+//}
 
 // fetchResources делает запрос к Prometheus и возвращает карту [кластер]значение [cite: 5]
 func fetchResources(pURL, namespace, queryTemplate string) (map[string]float64, error) {
@@ -76,7 +78,8 @@ func fetchResources(pURL, namespace, queryTemplate string) (map[string]float64, 
 		if err != nil {
 			continue
 		}
-		results[cleanClusterName(res.Metric.Cluster)] = val
+		results[res.Metric.Cluster] = val
+		//results[cleanClusterName(res.Metric.Cluster)] = val
 	}
 	return results, nil
 }
@@ -103,8 +106,10 @@ func main() {
 		}
 
 		// Расчет необходимых ресурсов: executors_num * cpu и executors_num * ram [cite: 2]
-		needCPU := float64(req.ExecutorsNum * req.CPU)
-		needRAM := float64(req.ExecutorsNum * req.RAM)
+		//needCPU := float64(req.ExecutorsNum * req.CPU)
+		//needRAM := float64(req.ExecutorsNum * req.RAM)
+		needCPU := float64(req.CPU)
+		needRAM := float64(req.RAM)
 
 		// PromQL шаблоны для CPU и RAM [cite: 7, 9]
 		cpuQ := `kube_resourcequota{namespace="%s",resource="limits.cpu",type="hard"} - on(cluster) kube_resourcequota{namespace="%s",resource="limits.cpu",type="used"}`

@@ -1,0 +1,72 @@
+ты senior golang разработчик.
+требуется создать микросервис medea-balancer.
+микросервис medea-balancer будет заниматься балансировкой запросов к argo-workflows.
+
+технический стэк проекта:
+* golang - язык, на котором должен быть написан микросервис.
+* postgresql - база данных, в которой микросервис хранит сведения о запущенных потоках.
+* medea-scout - микросервис, который определяет кластер, на котором нужно будет запустить workflow.
+
+адрес сервера, порт, базу данных и параметры подключения к postgresql medea-balancer должен брать из env переменной POSTGRESQL_URL. пример: POSTGRESQL_URL=127.0.0.1:6544/medeadb?sslmode=disable. 
+имя пользователя и пароль для подключения к postgresql должны браться из env переменных POSTGRESQL_USER и POSTGRESQL_PASS. пример: POSTGRESQL_USER=pguser POSTGRESQL_PASS=pgpass.
+адрес medea-scout и порт должны браться из env переменной MEDEA_SCOUT_URL. пример: MEDEA_SCOUT_URL="http://127.0.0.1:8081".
+
+микросервис medea-balancer должен быть написан минималистично и просто для понимания и чтения. сборка должна быть осуществлена в один файл без зависимостей.
+к микросервису будут поступать запросы на создание workflow, статус workflow, остановку workflow и удаление workflow.
+
+
+A. ПРОЦЕСС СОЗДАНИЯ WORKFLOWS.
+
+шаг 1. medea-balancer получает запрос вида:
+curl -X POST --url <MEDEA_BALANCER_URL>/api/v1/workflows/<NAMESPACE_VAR>/submit --header "tuz: <TUZ_VAR>" --header "Content-Type: application/json" --data '{"resourceKind": "WorkflowTemplate", "resourceName": "<WorkflowTemplate_VAR>", "submitOptions": {"labels": "workflows.argoproj.io/workflow-template=<WorkflowTemplate_VAR>", "parameters": ["executor_num=2","driver_cores=1","driver_cores_limit=1","driver_memory=0.2g","driver_memory_limit=0.25g","executor_cores=1","executor_cores_limit=1","executor_memory_limit=0.128g"]}}'
+MEDEA_BALANCER_URL - переменная, адрес, на котором работает medea-balancer.
+NAMESPACE_VAR - переменная, значение namespace, в котором должен быть запущен workflow.
+TUZ_VAR - переменная.
+WorkflowTemplate_VAR - переменная, WorkflowTemplate, который нужно запустить в целевом namespace.
+в блоке parameters находятся переменные и их может быть произвольное количество. Могут быть переменные, которых нет в примере. 
+значения *memory* должны содержать в значении g, в противном случае нужно выдать ошибку клиента и сообщить, что параметры памяти должны быть заданы в гигабайтах.
+
+шаг 2. medea-balancer должен получить требуемое количество cpu и memory (в гигабайтах) нужных для работы workflow. 
+cpu_total=executor_cores_limit*executor_num+driver_cores_limit
+mem_total=executor_memory_limit*executor_num+driver_memory_limit
+
+в логах выводим сколько cpu и memory требуется для запуска workflow.
+
+шаг 3. после получения cpu_total и mem_total нужно отправить запрос на определение целевого кластера в medea-scout. пример запроса:
+curl -X POST <MEDEA_SCOUT_URL>/api/request \
+  -H "Content-Type: application/json" \
+  -d '{"namespace": "NAMESPACE_VAR", "cpu": <cpu_total>, "ram": <mem_total>}'
+
+пример успешного ответа от medea-scout:
+{"cluster":"<TARGET_CLUSTER_VAR>"}
+{"cluster":"argowf2"}
+
+если medea-scout не найдет подходящего кластера, выдаст ошибку 404, что тоже нужно отобразить в логах.
+
+шаг 4. если medea-scout вернет подходящий кластер, нужно перенаправить изначальный запрос на целевой кластер. например:
+curl -X POST --url <TARGET_CLUSTER_VAR>/api/v1/workflows/<NAMESPACE_VAR>/submit --header "tuz: <TUZ_VAR>" --header "Content-Type: application/json" --data '{"resourceKind": "WorkflowTemplate", "resourceName": "<WorkflowTemplate_VAR>", "submitOptions": {"labels": "workflows.argoproj.io/workflow-template=<WorkflowTemplate_VAR>", "parameters": ["executor_num=2","driver_cores=1","driver_cores_limit=1","driver_memory=0.2g","driver_memory_limit=0.25g","executor_cores=1","executor_cores_limit=1","executor_memory_limit=0.128g"]}}'
+В ответ medea-balancer получит json, в котором будет имя запущенного workflow.
+Весь этот json нужно вернуть в ответ на изначальный запрос в шаге 1. 
+
+шаг 5. Так же нужно сделать запись в базу postgresql. таблица workflows содержит столбцы id,workflowname,workflowtemplate,namespace,cluster. Для каждого запущенного workflow должна быть соответствующая запись.
+при создании базы применяется такой init.sql:
+CREATE TABLE IF NOT EXISTS workflows (
+    id SERIAL PRIMARY KEY,
+    workflowname VARCHAR(255) NOT NULL,
+    workflowtemplate VARCHAR(255) NOT NULL,
+    namespace VARCHAR(255) NOT NULL,
+    cluster VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+B. Запрос статуса, удаления или остановки workflow.
+
+Medea-balancer получает запрос, смотрит в БД на каком кластере был запущен workflow, проксирует запрос на этот кластер и возвращает ответ. Нужно только проксировать запросы GET, DELETE и PUT на целевой кластер и возвращать ответ.
+Пример запроса статуса workflow к medea-balancer:
+curl -X GET --url <MEDEA_BALANCER_URL>/api/v1/workflows/<NAMESPACE_VAR>/<WorkflowName_VAR> --header "tuz: <sdpComputeTuz>"
+
+Пример запроса на удаление workflow к medea-balancer:
+curl -X DELETE --url <MEDEA_BALANCER_URL>/api/v1/workflows/<NAMESPACE_VAR>/<WorkflowName_VAR> --header "tuz: <sdpComputeTuz>" --header "Content-Type: application/json" --data '{"name": "<WorkflowName_VAR>", "namespace": "<NAMESPACE_VAR>"}'
+
+Пример запроса на остановку workflow к medea-balancer:
+curl -X PUT --url <MEDEA_BALANCER_URL>/api/v1/workflows/<NAMESPACE_VAR>/<WorkflowName_VAR>/stop --header "tuz: <sdpComputeTuz>" --header "Content-Type: application/json" --data '{"name": "<WorkflowName_VAR>", "namespace": "<NAMESPACE_VAR>"}'
