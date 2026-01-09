@@ -8,47 +8,35 @@ import (
 	"net/url"
 	"os"
 	"strconv"
-	//"strings"
 	"time"
 )
 
-// RequestPayload описывает входящий JSON [cite: 4]
+// RequestPayload describes the incoming JSON
 type RequestPayload struct {
-	Namespace    string `json:"namespace"`
-	CPU          float64    `json:"cpu"`
-	RAM          float64    `json:"ram"`
-	//CPU          int    `json:"cpu"`
-	//RAM          int    `json:"ram"`
-	//ExecutorsNum int    `json:"executors_num"`
+	Namespace    string  `json:"namespace"`
+	CPU          float64 `json:"cpu"`
+	RAM          float64 `json:"ram"`
 }
 
-// ResponsePayload описывает исходящий JSON [cite: 2]
+// ResponsePayload describes the outgoing JSON
 type ResponsePayload struct {
 	Cluster string `json:"cluster"`
 }
 
-// PrometheusResponse для десериализации ответа от Prometheus [cite: 7, 9]
+// PrometheusResponse for deserializing the response from Prometheus
 type PrometheusResponse struct {
 	Status string `json:"status"`
 	Data   struct {
 		Result []struct {
 			Metric struct {
 				Cluster string `json:"cluster"`
-			} `json:"metric"`
+			} `metric`
 			Value []interface{} `json:"value"`
 		} `json:"result"`
 	} `json:"data"`
 }
 
-// cleanClusterName убирает порт (например, :8080) из имени кластера [cite: 7]
-//func cleanClusterName(name string) string {
-//	if i := strings.Index(name, ":"); i != -1 {
-//		return name[:i]
-//	}
-//	return name
-//}
-
-// fetchResources делает запрос к Prometheus и возвращает карту [кластер]значение [cite: 5]
+// fetchResources makes a request to Prometheus and returns a map of [cluster]value
 func fetchResources(pURL, namespace, queryTemplate string) (map[string]float64, error) {
 	results := make(map[string]float64)
 	query := fmt.Sprintf(queryTemplate, namespace, namespace)
@@ -69,7 +57,7 @@ func fetchResources(pURL, namespace, queryTemplate string) (map[string]float64, 
 		if len(res.Value) < 2 {
 			continue
 		}
-		// Prometheus возвращает значение как строку (напр. "29"), парсим в float64 [cite: 7, 10]
+		// Prometheus returns values as strings (e.g., "29"), parse to float64
 		valStr, ok := res.Value[1].(string)
 		if !ok {
 			continue
@@ -79,7 +67,6 @@ func fetchResources(pURL, namespace, queryTemplate string) (map[string]float64, 
 			continue
 		}
 		results[res.Metric.Cluster] = val
-		//results[cleanClusterName(res.Metric.Cluster)] = val
 	}
 	return results, nil
 }
@@ -87,8 +74,8 @@ func fetchResources(pURL, namespace, queryTemplate string) (map[string]float64, 
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	pURL := os.Getenv("PROMETHEUS_URL") // 
-	port := os.Getenv("MEDEA_SCOUT_PORT") // 
+	pURL := os.Getenv("PROMETHEUS_URL") 
+	port := os.Getenv("MEDEA_SCOUT_PORT") 
 	if port == "" {
 		port = "8080"
 	}
@@ -105,13 +92,10 @@ func main() {
 			return
 		}
 
-		// Расчет необходимых ресурсов: executors_num * cpu и executors_num * ram [cite: 2]
-		//needCPU := float64(req.ExecutorsNum * req.CPU)
-		//needRAM := float64(req.ExecutorsNum * req.RAM)
 		needCPU := float64(req.CPU)
 		needRAM := float64(req.RAM)
 
-		// PromQL шаблоны для CPU и RAM [cite: 7, 9]
+		// PromQL templates for CPU and RAM
 		cpuQ := `kube_resourcequota{namespace="%s",resource="limits.cpu",type="hard"} - on(cluster) kube_resourcequota{namespace="%s",resource="limits.cpu",type="used"}`
 		ramQ := `(kube_resourcequota{namespace="%s",resource="limits.memory",type="hard"} - on(cluster) kube_resourcequota{namespace="%s",resource="limits.memory",type="used"})/1024^3`
 
@@ -125,7 +109,7 @@ func main() {
 
 		var suitable []string
 		for cluster, cVal := range cpus {
-			// Сравнение доступных ресурсов в кластере с требуемыми [cite: 2]
+			// Compare available resources in the cluster with requirements
 			if cVal >= needCPU && mems[cluster] >= needRAM {
 				suitable = append(suitable, cluster)
 			}
@@ -136,7 +120,7 @@ func main() {
 			return
 		}
 
-		// Возвращаем случайный кластер из подходящих [cite: 2]
+		// Return a random cluster from the suitable list
 		selected := suitable[rand.Intn(len(suitable))]
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(ResponsePayload{Cluster: selected})

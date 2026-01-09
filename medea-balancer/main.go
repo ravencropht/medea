@@ -16,7 +16,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// Config хранит конфигурацию приложения из ENV
+// Config stores application configuration from Environment Variables
 type Config struct {
 	PgURL       string
 	PgUser      string
@@ -28,7 +28,7 @@ type Config struct {
 // Global DB handle
 var db *sql.DB
 
-// Структуры для парсинга запросов
+// Structures for request parsing
 type SubmitRequest struct {
 	ResourceKind  string `json:"resourceKind"`
 	ResourceName  string `json:"resourceName"`
@@ -48,7 +48,7 @@ type ScoutResponse struct {
 	Cluster string `json:"cluster"`
 }
 
-// WorkflowResponse используется для частичного парсинга ответа от Argo для получения имени
+// WorkflowResponse used for partial parsing of Argo responses to retrieve the name
 type WorkflowResponse struct {
 	Metadata struct {
 		Name string `json:"name"`
@@ -56,59 +56,59 @@ type WorkflowResponse struct {
 }
 
 func main() {
-	// 1. Загрузка конфигурации
+	// 1. Load configuration
 	cfg := loadConfig()
 
-	// 2. Подключение к PostgreSQL
-	// Формируем DSN: postgres://user:pass@host:port/dbname?params
+	// 2. Connect to PostgreSQL
+	// DSN format: postgres://user:pass@host:port/dbname?params
 	dsn := fmt.Sprintf("postgres://%s:%s@%s", cfg.PgUser, cfg.PgPass, cfg.PgURL)
 	var err error
 	db, err = sql.Open("postgres", dsn)
 	if err != nil {
-		log.Fatalf("Ошибка открытия подключения к БД: %v", err)
+		log.Fatalf("Error opening database connection: %v", err)
 	}
 	defer db.Close()
 
 	if err = db.Ping(); err != nil {
-		log.Fatalf("Ошибка подключения к БД: %v", err)
+		log.Fatalf("Error connecting to database: %v", err)
 	}
 
-	// 3. Инициализация таблицы (для удобства, если не создана)
+	// 3. Initialize table (if it doesn't exist)
 	initDB()
 
-	// 4. Настройка роутера (Go 1.22+)
+	// 4. Setup router (Go 1.22+)
 	mux := http.NewServeMux()
 
-	// Part A: Создание Workflow
+	// Part A: Workflow Creation
 	mux.HandleFunc("POST /api/v1/workflows/{namespace}/submit", func(w http.ResponseWriter, r *http.Request) {
 		handleSubmit(w, r, cfg.MedeaScout)
 	})
 
-	// Part B: Статус, Удаление, Остановка
+	// Part B: Status, Deletion, Stopping
 	mux.HandleFunc("GET /api/v1/workflows/{namespace}/{workflowName}", handleProxy)
 	mux.HandleFunc("DELETE /api/v1/workflows/{namespace}/{workflowName}", handleProxy)
 	mux.HandleFunc("PUT /api/v1/workflows/{namespace}/{workflowName}/stop", handleProxy)
 
-	log.Println("medea-balancer запущен. Ожидание запросов...")
+	log.Println("medea-balancer started. Waiting for requests...")
 	if err := http.ListenAndServe(":" + cfg.ServicePort, mux); err != nil {
 		log.Fatal(err)
 	}
 }
 
-// --- Обработчики (Handlers) ---
+// --- Handlers ---
 
-// handleSubmit реализует Процесс Создания Workflows (Part A)
+// handleSubmit implements the Workflow Creation Process (Part A)
 func handleSubmit(w http.ResponseWriter, r *http.Request, scoutURL string) {
 	namespace := r.PathValue("namespace")
 	tuz := r.Header.Get("tuz")
 
-	// Читаем тело запроса
+	// Read request body
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read body", http.StatusInternalServerError)
 		return
 	}
-	// Восстанавливаем тело для повторного использования
+	// Restore body for reuse
 	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	var req SubmitRequest
@@ -117,20 +117,20 @@ func handleSubmit(w http.ResponseWriter, r *http.Request, scoutURL string) {
 		return
 	}
 
-	// Шаг 2: Расчет ресурсов
+	// Step 2: Resource Calculation
 	cpuTotal, memTotal, err := calculateResources(req.SubmitOptions.Parameters)
 	if err != nil {
-		// Ошибка, если память не в гигабайтах
+		// Error if memory is not in gigabytes
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("Требуемые ресурсы для workflow: CPU=%.2f, RAM=%.2f GB", cpuTotal, memTotal)
+	log.Printf("Required resources for workflow: CPU=%.2f, RAM=%.2f GB", cpuTotal, memTotal)
 
-	// Шаг 3: Запрос к medea-scout
+	// Step 3: Request to medea-scout
 	targetCluster, err := getTargetCluster(scoutURL, namespace, cpuTotal, memTotal)
 	if err != nil {
-		log.Printf("Ошибка получения кластера от medea-scout: %v", err)
+		log.Printf("Error obtaining cluster from medea-scout: %v", err)
 		if strings.Contains(err.Error(), "404") {
 			http.Error(w, "Cluster not found", http.StatusNotFound)
 		} else {
@@ -139,10 +139,10 @@ func handleSubmit(w http.ResponseWriter, r *http.Request, scoutURL string) {
 		return
 	}
 
-	// Шаг 4: Перенаправление запроса на целевой кластер
+	// Step 4: Forward request to the target cluster
 	targetURL := fmt.Sprintf("%s/api/v1/workflows/%s/submit", targetCluster, namespace)
 	
-	// Создаем новый запрос к целевому кластеру
+	// Create a new request for the target cluster
 	proxyReq, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		http.Error(w, "Failed to create proxy request", http.StatusInternalServerError)
@@ -154,7 +154,7 @@ func handleSubmit(w http.ResponseWriter, r *http.Request, scoutURL string) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(proxyReq)
 	if err != nil {
-		log.Printf("Ошибка запроса к целевому кластеру %s: %v", targetCluster, err)
+		log.Printf("Request error to target cluster %s: %v", targetCluster, err)
 		http.Error(w, "Failed to forward request", http.StatusBadGateway)
 		return
 	}
@@ -162,28 +162,28 @@ func handleSubmit(w http.ResponseWriter, r *http.Request, scoutURL string) {
 
 	respBody, _ := io.ReadAll(resp.Body)
 
-	// Если успех, сохраняем в БД
+	// If successful, save to DB
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var wfResp WorkflowResponse
 		if err := json.Unmarshal(respBody, &wfResp); err == nil && wfResp.Metadata.Name != "" {
-			// Шаг 5: Запись в PostgreSQL
+			// Step 5: Save to PostgreSQL
 			saveWorkflowToDB(wfResp.Metadata.Name, req.ResourceName, namespace, targetCluster)
 		}
 	}
 
-	// Возвращаем ответ клиенту
+	// Return response to client
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
 	w.Write(respBody)
 }
 
-// handleProxy реализует Запрос статуса, удаления или остановки (Part B)
+// handleProxy implements Status, Delete, or Stop requests (Part B)
 func handleProxy(w http.ResponseWriter, r *http.Request) {
 	namespace := r.PathValue("namespace")
 	workflowName := r.PathValue("workflowName")
 	tuz := r.Header.Get("tuz")
 
-	// Смотрим в БД, где запущен workflow
+	// Check DB to see where the workflow is running
 	clusterURL, err := getClusterFromDB(workflowName, namespace)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -195,15 +195,15 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Проксируем запрос
-	// Формируем целевой URL, сохраняя путь и query параметры
+	// Proxy the request
+	// Construct the target URL, preserving path and query parameters
 	targetPath := r.URL.Path // /api/v1/workflows/...
 	targetFullURL := fmt.Sprintf("%s%s", clusterURL, targetPath)
 	if r.URL.RawQuery != "" {
 		targetFullURL += "?" + r.URL.RawQuery
 	}
 
-	// Копируем тело запроса (если есть, например для DELETE/PUT)
+	// Copy request body (if exists, e.g., for DELETE/PUT)
 	bodyBytes, _ := io.ReadAll(r.Body)
 	proxyReq, err := http.NewRequest(r.Method, targetFullURL, bytes.NewBuffer(bodyBytes))
 	if err != nil {
@@ -211,7 +211,7 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Копируем заголовки
+	// Copy headers
 	proxyReq.Header.Set("tuz", tuz)
 	proxyReq.Header.Set("Content-Type", r.Header.Get("Content-Type"))
 
@@ -223,13 +223,13 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// Возвращаем ответ
+	// Return response
 	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
 }
 
-// --- Вспомогательные функции ---
+// --- Helper Functions ---
 
 func calculateResources(params []string) (float64, float64, error) {
 	vals := make(map[string]string)
@@ -275,10 +275,8 @@ func calculateResources(params []string) (float64, float64, error) {
 		return 0, 0, err
 	}
 
-	// Формулы из ТЗ
-	// cpu_total=executor_cores_limit*executor_num+driver_cores_limit
+	// Formulas from Technical Requirements
 	cpuTotal := executorCoresLimit*executorNum + driverCoresLimit
-	// mem_total=executor_memory_limit*executor_num+driver_memory_limit
 	memTotal := executorMemLimit*executorNum + driverMemLimit
 
 	return cpuTotal, memTotal, nil
@@ -292,7 +290,7 @@ func getTargetCluster(scoutURL, ns string, cpu, ram float64) (string, error) {
 	}
 	jsonBody, _ := json.Marshal(reqBody)
 
-	// POST запрос к medea-scout
+	// POST request to medea-scout
 	resp, err := http.Post(scoutURL+"/api/request", "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", err
@@ -314,19 +312,19 @@ func getTargetCluster(scoutURL, ns string, cpu, ram float64) (string, error) {
 }
 
 func saveWorkflowToDB(wfName, wfTemplate, ns, cluster string) {
-	// Запись в базу: id, workflowname, workflowtemplate, namespace, cluster
+	// Record to database: id, workflowname, workflowtemplate, namespace, cluster
 	query := `INSERT INTO workflows (workflowname, workflowtemplate, namespace, cluster) VALUES ($1, $2, $3, $4)`
 	_, err := db.Exec(query, wfName, wfTemplate, ns, cluster)
 	if err != nil {
-		log.Printf("Ошибка записи в БД: %v", err)
+		log.Printf("Error writing to DB: %v", err)
 	} else {
-		log.Printf("Workflow %s сохранен в БД (cluster: %s)", wfName, cluster)
+		log.Printf("Workflow %s saved to DB (cluster: %s)", wfName, cluster)
 	}
 }
 
 func getClusterFromDB(wfName, ns string) (string, error) {
 	var cluster string
-	// Ищем кластер по имени workflow и namespace
+	// Search for cluster by workflow name and namespace
 	query := `SELECT cluster FROM workflows WHERE workflowname = $1 AND namespace = $2 ORDER BY id DESC LIMIT 1`
 	err := db.QueryRow(query, wfName, ns).Scan(&cluster)
 	return cluster, err
@@ -334,17 +332,16 @@ func getClusterFromDB(wfName, ns string) (string, error) {
 
 func loadConfig() Config {
 	return Config{
-		PgURL:       os.Getenv("POSTGRESQL_URL"),  // [cite: 5]
-		PgUser:      os.Getenv("POSTGRESQL_USER"), // [cite: 6]
-		PgPass:      os.Getenv("POSTGRESQL_PASS"), // [cite: 6]
-		MedeaScout:  os.Getenv("MEDEA_SCOUT_URL"), // [cite: 7]
+		PgURL:       os.Getenv("POSTGRESQL_URL"),
+		PgUser:      os.Getenv("POSTGRESQL_USER"),
+		PgPass:      os.Getenv("POSTGRESQL_PASS"),
+		MedeaScout:  os.Getenv("MEDEA_SCOUT_URL"),
 		ServicePort: os.Getenv("MEDEA_BALANCER_PORT"),
-		//ServicePort: "8080",
 	}
 }
 
 func initDB() {
-	// Создание таблицы при старте [cite: 23]
+	// Create table on startup
 	query := `CREATE TABLE IF NOT EXISTS workflows (
 		id SERIAL PRIMARY KEY,
 		workflowname VARCHAR(255) NOT NULL,
