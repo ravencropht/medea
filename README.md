@@ -1,4 +1,7 @@
 # Medea Workflow Orchestration System
+> **⚠️ DISCLAIMER: NOT FOR PRODUCTION USE!**
+
+> This project is for educational or testing purposes only. It lacks the necessary security, error handling, and high-availability features required for a production environment.
 
 The Medea system is a distributed orchestration solution designed to balance and manage the lifecycle of **Argo Workflows** Spark-jobs across multiple Kubernetes clusters. It consists of two microservices that work together to optimize resource allocation.
 
